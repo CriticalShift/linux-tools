@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VSC8531-02 PHY Register Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .binary-display {
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 2px;
+            word-break: break-all;
+        }
+        .read-only-control {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .read-only-control-display {
+             font-weight: bold;
+             text-align: center;
+        }
+        .reserved-non-zero {
+            color: red;
+            font-weight: bold;
+            text-align: center; /* Maintain centering like other display fields */
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 font-sans p-4 md:p-8">
+
+    <div class="container mx-auto max-w-4xl">
+        <h1 class="text-3xl font-bold text-center text-gray-800 mb-8">VSC8531-02 PHY Register Calculator</h1>
+        <div id="registers-container">
+            <!-- Registers will be dynamically inserted here -->
+        </div>
+    </div>
+
+    <script>
+        // --- Register Definitions ---
+        const registers = {
+            "0": {
+                name: "Mode Control",
+                address: "0x00",
+                description: "Controls core PHY operational modes like speed, duplex, loopback, power-down, and reset.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "1140", // Matches Datasheet Table 19
+                fields: [
+                    { bit: 15, name: "Software Reset", type: "checkbox", description: "Assert Software Reset. Restores defaults (except sticky/super-sticky bits). (Self-Clearing)" }, // Enhanced
+                    { bit: 14, name: "Loopback", type: "checkbox", description: "Enable near-end loopback (MAC interface). Data from Tx pins looped to Rx pins." }, // Enhanced
+                    { bits: [13, 6], name: "Forced Speed Selection", type: "select", description: "Select forced speed. Only effective if Autonegotiation (bit 12) is disabled.", options: { "0": "10 Mbps", "1": "100 Mbps", "2": "1000 Mbps", "3": "Reserved" } }, // Enhanced
+                    { bit: 12, name: "Autonegotiation Enable", type: "checkbox", description: "Enable Auto-Negotiation process. 0: Disable Auto-Negotiation (use forced speed/duplex)." }, // Enhanced
+                    { bit: 11, name: "Power-down", type: "checkbox", description: "Enter low power state. SMI access remains possible." }, // Enhanced
+                    { bit: 10, name: "Isolate", type: "checkbox", description: "Electrically isolate PHY from MAC interface. Outputs disabled, inputs ignored." }, // Enhanced
+                    { bit: 9, name: "Restart Autonegotiation", type: "checkbox", description: "Restart the Auto-Negotiation process (if enabled). (Self-Clearing)" }, // Enhanced
+                    { bit: 8, name: "Duplex Mode", type: "select", description: "Select duplex mode. Only effective if Autonegotiation (bit 12) is disabled.", options: {"0": "Half-duplex", "1": "Full-duplex"}}, // Changed type, Enhanced
+                    { bit: 7, name: "Collision Test Enable", type: "checkbox", description: "Enable COL signal test." }, // Enhanced
+                    { bits: [5, 4, 3, 2, 1, 0], name: "Reserved", type: "reserved", description: "Reserved bits [5:0]. Read as 0." }, // Enhanced
+                ]
+            },
+            "1": {
+                name: "Mode Status",
+                address: "0x01",
+                description: "Reports PHY capabilities and current link status.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "794D", // Corrected based on Datasheet Table 20
+                fields: [
+                    { bit: 15, name: "100BASE-T4 capability", type: "display", description: "Indicates if PHY supports 100BASE-T4 (0=No)." }, // Enhanced
+                    { bit: 14, name: "100BASE-TX FDX capability", type: "display", description: "Indicates if PHY supports 100BASE-TX Full-Duplex (1=Yes)." }, // Enhanced
+                    { bit: 13, name: "100BASE-TX HDX capability", type: "display", description: "Indicates if PHY supports 100BASE-TX Half-Duplex (1=Yes)." }, // Enhanced
+                    { bit: 12, name: "10BASE-T FDX capability", type: "display", description: "Indicates if PHY supports 10BASE-T Full-Duplex (1=Yes)." }, // Enhanced
+                    { bit: 11, name: "10BASE-T HDX capability", type: "display", description: "Indicates if PHY supports 10BASE-T Half-Duplex (1=Yes)." }, // Enhanced
+                    { bit: 10, name: "100BASE-T2 FDX capability", type: "display", description: "Indicates if PHY supports 100BASE-T2 Full-Duplex (0=No)." }, // Enhanced
+                    { bit: 9, name: "100BASE-T2 HDX capability", type: "display", description: "Indicates if PHY supports 100BASE-T2 Half-Duplex (0=No)." }, // Enhanced
+                    { bit: 8, name: "Extended Status Available", type: "display", description: "Indicates that extended status information is available in Register 15 (0x0F) (1=Yes)." }, // Enhanced
+                    { bit: 7, name: "Reserved", type: "reserved", description: "Reserved. Reads as 0." }, // Enhanced
+                    { bit: 6, name: "Preamble Suppression Capability", type: "display", description: "Indicates if Management Frame (MF) preamble suppression is supported (1=Yes)." }, // Enhanced
+                    { bit: 5, name: "Autonegotiation Complete", type: "display", description: "Indicates if the Auto-Negotiation process has completed (1=Yes)." }, // Enhanced
+                    { bit: 4, name: "Remote Fault Detected", type: "display", description: "Indicates a remote fault condition was detected during Auto-Negotiation. (Latches High)" }, // Enhanced
+                    { bit: 3, name: "Autonegotiation Capability", type: "display", description: "Indicates if the PHY supports Auto-Negotiation (1=Yes)." }, // Enhanced
+                    { bit: 2, name: "Link Status", type: "display", description: "Indicates if a valid link is established (1 = Link Up, 0 = Link Down). (Latches Low)" }, // Enhanced
+                    { bit: 1, name: "Jabber Detect", type: "display", description: "Indicates a jabber condition was detected. (Latches High)" }, // Enhanced
+                    { bit: 0, name: "Extended Register Capability", type: "display", description: "Indicates if extended registers (Reg 16+) are accessible (1=Yes)." }, // Enhanced
+                ]
+            },
+            "2": {
+                name: "PHY Identifier 1",
+                address: "0x02",
+                access: "RO",
+                description: "Contains bits 3 through 18 of the IEEE Organizationally Unique Identifier (OUI).", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0007", // Matches Datasheet Table 21
+                fields: [
+                    { bits: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], name: "OUI[18:3]", type: "display", description: "OUI Bits [18:3] (Value: 0x0007 for Microsemi)" }, // Enhanced
+                ]
+            },
+            "3": {
+                name: "PHY Identifier 2",
+                address: "0x03",
+                access: "RO",
+                description: "Contains OUI bits 19:24, 6-bit Model Number, and 4-bit Revision Number.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0172", // Matches Datasheet Table 22 (OUI=000001, Model=010111, Rev=0010)
+                fields: [
+                    { bits: [15, 14, 13, 12, 11, 10], name: "OUI[24:19]", type: "display", description: "OUI LSBs Bits (Value: 000001b for Microsemi)" }, // Enhanced
+                    { bits: [9, 8, 7, 6, 5, 4], name: "Model Number", type: "display", description: "Manufacturer's Model Number (Value: 010111b for VSC8531)" }, // Enhanced
+                    { bits: [3, 2, 1, 0], name: "Revision Number", type: "display", description: "Device Revision Number (Value: 0010b for Rev C)" }, // Enhanced
+                ]
+            },
+            "4": {
+                name: "Auto-Negotiation Advertisement",
+                address: "0x04",
+                access: "R/W",
+                description: "Configures the abilities advertised by the local PHY during Auto-Negotiation.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "01E1", // Matches Datasheet Table 23
+                fields: [
+                    { bit: 15, name: "Next Page Request", type: "checkbox", description: "Request Next Page exchange with link partner." }, // Enhanced
+                    { bit: 14, name: "Reserved", type: "reserved", description: "Reserved. Read as 0." }, // Enhanced
+                    { bit: 13, name: "Remote Fault Advertisement", type: "checkbox", description: "Advertise detection of a remote fault condition." }, // Enhanced
+                    { bit: 12, name: "Reserved", type: "reserved", description: "Reserved. Read as 0." }, // Enhanced
+                    { bit: 11, name: "Asymmetric PAUSE Advertisement", type: "checkbox", description: "Advertise support for Asymmetric PAUSE (MAC specific)." }, // Enhanced
+                    { bit: 10, name: "Symmetric PAUSE Advertisement", type: "checkbox", description: "Advertise support for Symmetric PAUSE (MAC specific)." }, // Enhanced
+                    { bit: 9, name: "100BASE-T4 Advertisement", type: "checkbox", description: "Advertise 100BASE-T4 capability (Not supported by VSC8531)." }, // Enhanced
+                    { bit: 8, name: "100BASE-TX FDX Advertisement", type: "checkbox", description: "Advertise 100BASE-TX Full-Duplex capability." }, // Enhanced
+                    { bit: 7, name: "100BASE-TX HDX Advertisement", type: "checkbox", description: "Advertise 100BASE-TX Half-Duplex capability." }, // Enhanced
+                    { bit: 6, name: "10BASE-T FDX Advertisement", type: "checkbox", description: "Advertise 10BASE-T Full-Duplex capability." }, // Enhanced
+                    { bit: 5, name: "10BASE-T HDX Advertisement", type: "checkbox", description: "Advertise 10BASE-T Half-Duplex capability." }, // Enhanced
+                    { bits: [4, 3, 2, 1, 0], name: "Selector Field", type: "select", description: "Selector Field [4:0]: Defines the type of message. Must be 00001 for IEEE 802.3.", options: { "1": "00001 (IEEE 802.3 Ethernet)" } }, // Enhanced
+                ]
+            },
+            "5": {
+                name: "Link Partner Auto-Negotiation Capability",
+                address: "0x05",
+                access: "RO",
+                description: "Reports the abilities advertised by the link partner during Auto-Negotiation.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 24
+                fields: [
+                    { bit: 15, name: "Link Partner Next Page Request", type: "display", description: "Link Partner requests Next Page exchange." }, // Enhanced
+                    { bit: 14, name: "Link Partner Acknowledge", type: "display", description: "Link Partner acknowledges successful reception of Base Link Code Word." }, // Enhanced
+                    { bit: 13, name: "Link Partner Remote Fault", type: "display", description: "Link Partner indicates a remote fault condition." }, // Enhanced
+                    { bit: 12, name: "Reserved", type: "reserved", description: "Reserved." },
+                    { bit: 11, name: "Link Partner Asymmetric PAUSE Support", type: "display", description: "Link Partner supports Asymmetric PAUSE." }, // Enhanced
+                    { bit: 10, name: "Link Partner Symmetric PAUSE Support", type: "display", description: "Link Partner supports Symmetric PAUSE." }, // Enhanced
+                    { bit: 9, name: "Link Partner 100BASE-T4 Support", type: "display", description: "Link Partner supports 100BASE-T4." }, // Enhanced
+                    { bit: 8, name: "Link Partner 100BASE-TX FDX Support", type: "display", description: "Link Partner supports 100BASE-TX Full-Duplex." }, // Enhanced
+                    { bit: 7, name: "Link Partner 100BASE-TX HDX Support", type: "display", description: "Link Partner supports 100BASE-TX Half-Duplex." }, // Enhanced
+                    { bit: 6, name: "Link Partner 10BASE-T FDX Support", type: "display", description: "Link Partner supports 10BASE-T Full-Duplex." }, // Enhanced
+                    { bit: 5, name: "Link Partner 10BASE-T HDX Support", type: "display", description: "Link Partner supports 10BASE-T Half-Duplex." }, // Enhanced
+                    { bits: [4, 3, 2, 1, 0], name: "Link Partner Selector Field", type: "display", description: "Link Partner's Selector Field value." }, // Enhanced
+                ]
+            },
+             "6": {
+                name: "Auto-Negotiation Expansion",
+                address: "0x06",
+                access: "RO",
+                description: "Provides additional status related to the Auto-Negotiation process.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0004", // Matches Datasheet Table 25 (Local PHY next page capable = 1)
+                fields: [
+                    { bits: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5], name: "Reserved [15:5]", type: "reserved", description: "Reserved." },
+                    { bit: 4, name: "Parallel Detection Fault", type: "display", description: "Fault detected during Parallel Detection process. (Latches High)" }, // Enhanced
+                    { bit: 3, name: "Link Partner Next Page Capable", type: "display", description: "Link Partner is capable of Next Page exchange." }, // Enhanced
+                    { bit: 2, name: "Local PHY Next Page Capable", type: "display", description: "Local PHY is capable of Next Page exchange." }, // Enhanced
+                    { bit: 1, name: "Page Received", type: "display", description: "A new Link Code Word page has been received. (Latches High)" }, // Enhanced
+                    { bit: 0, name: "Link Partner Autoneg Capable", type: "display", description: "Link Partner is capable of Auto-Negotiation." }, // Enhanced
+                ]
+            },
+            "7": {
+                name: "Transmit Auto-Negotiation Next Page",
+                address: "0x07",
+                access: "R/W",
+                description: "Configures the content of the Next Page to be transmitted during Auto-Negotiation.", // Enhanced
+                isReadOnly: false, // Contains R/W bits
+                defaultValue: "2001", // Matches Datasheet Table 26 (Message page=1, code=1)
+                fields: [
+                    { bit: 15, name: "Next Page Request (Tx)", type: "checkbox", description: "Indicate that more Next Pages will follow this one." }, // Enhanced
+                    { bit: 14, name: "Reserved", type: "reserved", description: "Reserved. Write as 0." }, // Enhanced
+                    { bit: 13, name: "Message Page", type: "checkbox", description: "Transmit as a Message Page. 0: Transmit as an Unformatted Page." }, // Enhanced
+                    { bit: 12, name: "Acknowledge 2", type: "checkbox", description: "Acknowledge ability to comply with received message/request." }, // Enhanced
+                    { bit: 11, name: "Toggle (Read Only)", type: "display", description: "Toggle Bit (Read Only): Used for synchronization, reflects previously transmitted LCW toggle state." }, // Enhanced
+                    { bits: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], name: "Message/Unformatted Code Field", type: "hex", description: "Message or Unformatted Code Field [10:0] content.", maxLength: 3 }, // Enhanced
+                ]
+            },
+            "8": {
+                name: "Auto-Negotiation Link Partner Next Page Receive",
+                address: "0x08",
+                access: "RO",
+                description: "Reports the content of the Next Page received from the Link Partner.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 27
+                fields: [
+                    { bit: 15, name: "Link Partner Next Page Indication", type: "display", description: "Link Partner indicates more pages follow." }, // Enhanced
+                    { bit: 14, name: "Link Partner Acknowledge", type: "display", description: "Link Partner acknowledges reception." }, // Enhanced
+                    { bit: 13, name: "Link Partner Message Page", type: "display", description: "Link Partner sent a Message page. 0: Unformatted page." }, // Enhanced
+                    { bit: 12, name: "Link Partner Acknowledge 2", type: "display", description: "Link Partner indicates compliance with request." }, // Enhanced
+                    { bit: 11, name: "Link Partner Toggle", type: "display", description: "Reports the toggle bit value received from the Link Partner." }, // Enhanced
+                    { bits: [10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], name: "Link Partner Message/Unformatted Code", type: "display", description: "Reports the Code Field [10:0] received from Link Partner." }, // Enhanced
+                ]
+            },
+            "9": {
+                name: "1000BASE-T Control",
+                address: "0x09",
+                access: "R/W",
+                description: "Controls 1000BASE-T specific features like test modes and Master/Slave configuration.", // Enhanced
+                isReadOnly: false, // Contains R/W bits
+                defaultValue: "0300", // Matches Datasheet Table 28 (FDX=1, HDX=1)
+                fields: [
+                    { bits: [15, 14, 13], name: "Transmitter Test Mode", type: "select", description: "Select 1000BASE-T transmitter test mode (IEEE 802.3 Sec 40.6.1.1.2).", options: { "0": "Normal Operation", "1": "Test Mode 1 (Waveform)", "2": "Test Mode 2 (Master Jitter)", "3": "Test Mode 3 (Slave Jitter)", "4": "Test Mode 4 (Distortion)" } }, // Enhanced
+                    { bit: 12, name: "Manual Master/Slave Config Enable", type: "checkbox", description: "Enable manual Master/Slave configuration (use bit 11). 0: Use Auto-Negotiation result." }, // Enhanced
+                    { bit: 11, name: "Manual Master/Slave Value", type: "select", description: "Manual Master/Slave Value (Only effective if bit 12=1).", options: {"0": "Configure as Slave", "1": "Configure as Master"} }, // Changed type, Enhanced
+                    { bit: 10, name: "Port Type", type: "select", description: "Configure PHY port type.", options: {"0": "Single-port device", "1": "Multi-port device"} }, // Changed type, Enhanced
+                    { bit: 9, name: "Advertise 1000BASE-T FDX", type: "checkbox", description: "Advertise 1000BASE-T Full-Duplex capability during Auto-Negotiation." }, // Enhanced
+                    { bit: 8, name: "Advertise 1000BASE-T HDX", type: "checkbox", description: "Advertise 1000BASE-T Half-Duplex capability during Auto-Negotiation." }, // Enhanced
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "Reserved [7:0]", type: "reserved", description: "Reserved. Read as 0." }, // Enhanced
+                ]
+            },
+            "10": {
+                name: "1000BASE-T Status",
+                address: "0x0A",
+                access: "RO",
+                description: "Reports status of 1000BASE-T Auto-Negotiation and link operation.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "4000", // Matches Datasheet Table 29 (Master/Slave config resolved to Master=1)
+                fields: [
+                    { bit: 15, name: "Master/Slave Config Fault", type: "display", description: "Master/Slave configuration fault detected. (Latches High, Self-Clearing)" }, // Enhanced
+                    { bit: 14, name: "Master/Slave Config Resolution", type: "display", description: "Result of Master/Slave negotiation (1=Local PHY is Master, 0=Slave)." }, // Enhanced
+                    { bit: 13, name: "Local Receiver Status", type: "display", description: "Indicates status of the local receiver (1=OK, 0=Not OK)." }, // Enhanced
+                    { bit: 12, name: "Remote Receiver Status", type: "display", description: "Indicates status of the remote receiver as reported by Link Partner (1=OK, 0=Not OK)." }, // Enhanced
+                    { bit: 11, name: "LP 1000BASE-T FDX Capability", type: "display", description: "Link Partner advertised 1000BASE-T Full-Duplex capability." }, // Enhanced
+                    { bit: 10, name: "LP 1000BASE-T HDX Capability", type: "display", description: "Link Partner advertised 1000BASE-T Half-Duplex capability." }, // Enhanced
+                    { bits: [9, 8], name: "Reserved [9:8]", type: "reserved", description: "Reserved." },
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "Idle Error Count", type: "display", description: "Counts errors detected during Idle symbol reception. (Self-Clearing on Read)" }, // Enhanced
+                ]
+            },
+             // Registers 11 & 12 are Reserved
+             "13": {
+                name: "MMD Access Control",
+                address: "0x0D",
+                access: "R/W",
+                description: "Controls access to Clause 45 MMD (MDIO Manageable Devices) registers.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0000", // No default specified in Datasheet Table 30
+                fields: [
+                    { bits: [15, 14], name: "Function", type: "select", description: "Selects MMD access function (Address or Data operation).", options: { "0": "Address", "1": "Data, no post increment", "2": "Data, post increment R/W address", "3": "Data, post increment W address only" } }, // Enhanced
+                    { bits: [13, 12, 11, 10, 9, 8, 7, 6, 5], name: "Reserved [13:5]", type: "reserved", description: "Reserved. Write as 0." }, // Enhanced
+                    { bits: [4, 3, 2, 1, 0], name: "Device Address (DEVAD)", type: "select", description: "Selects the MMD device address (DEVAD) per Clause 45.", options: { "1": "1 (PMD/PMA)", "3": "3 (PCS)", "4": "4 (PHY XS)", "5": "5 (DTE XS)", "7": "7 (Auto-Neg)" } }, // Enhanced options
+                ]
+            },
+            "14": {
+                name: "MMD Address or Data",
+                address: "0x0E",
+                access: "R/W",
+                description: "Register for Address or Data transfer for MMD (Clause 45) access, controlled by Reg 13.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0000", // No default specified in Datasheet Table 31
+                fields: [
+                    { bits: [15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], name: "Register Address/Data", type: "hex", description: "Holds MMD register address or data value for the operation selected in Reg 13.", maxLength: 4 }, // Enhanced
+                ]
+            },
+            "15": {
+                name: "1000BASE-T Status Extension 1",
+                address: "0x0F",
+                access: "RO",
+                description: "Provides extended PHY capability status information (complementary to Register 1).", // Enhanced
+                isReadOnly: true,
+                defaultValue: "3000", // Matches Datasheet Table 32 (1000BASE-T FDX/HDX capable = 1)
+                fields: [
+                    { bit: 15, name: "Reserved", type: "reserved", description: "Reserved." },
+                    { bit: 14, name: "1000BASE-X HDX capability", type: "display", description: "Indicates if PHY supports 1000BASE-X Half-Duplex (0=No)." }, // Enhanced
+                    { bit: 13, name: "1000BASE-T FDX capability", type: "display", description: "Indicates if PHY supports 1000BASE-T Full-Duplex (1=Yes)." }, // Enhanced
+                    { bit: 12, name: "1000BASE-T HDX capability", type: "display", description: "Indicates if PHY supports 1000BASE-T Half-Duplex (1=Yes)." }, // Enhanced
+                    { bits: [11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0], name: "Reserved [11:0]", type: "reserved", description: "Reserved." },
+                ]
+            },
+            "16": {
+                name: "100BASE-TX Status Extension",
+                address: "0x10",
+                access: "RO",
+                description: "Provides extended status information specific to 100BASE-TX operation.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 33
+                fields: [
+                    { bit: 15, name: "100BASE-TX Descrambler Lock", type: "display", description: "Descrambler is locked onto incoming stream." }, // Enhanced
+                    { bit: 14, name: "100BASE-TX Lock Error", type: "display", description: "Descrambler lock error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 13, name: "100BASE-TX Disconnect State", type: "display", description: "PHY has detected a 100BASE-TX link disconnect. (Self-Clearing)" }, // Enhanced
+                    { bit: 12, name: "100BASE-TX Link Status", type: "display", description: "PHY currently has an active 100BASE-TX link." }, // Enhanced
+                    { bit: 11, name: "100BASE-TX Receive Error", type: "display", description: "Receive error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 10, name: "100BASE-TX Transmit Error", type: "display", description: "Transmit error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 9, name: "100BASE-TX SSD Error", type: "display", description: "Start-of-Stream Delimiter error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 8, name: "100BASE-TX ESD Error", type: "display", description: "End-of-Stream Delimiter error detected. (Self-Clearing)" }, // Enhanced
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "Reserved [7:0]", type: "reserved", description: "Reserved." },
+                ]
+            },
+            "17": {
+                name: "1000BASE-T Status Extension 2",
+                address: "0x11",
+                access: "RO",
+                description: "Provides further extended status information specific to 1000BASE-T operation.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 34
+                fields: [
+                    { bit: 15, name: "1000BASE-T Descrambler Lock", type: "display", description: "Descrambler is locked onto incoming stream." }, // Enhanced
+                    { bit: 14, name: "1000BASE-T Lock Error", type: "display", description: "Descrambler lock error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 13, name: "1000BASE-T Disconnect State", type: "display", description: "PHY has detected a 1000BASE-T link disconnect. (Self-Clearing)" }, // Enhanced
+                    { bit: 12, name: "1000BASE-T Link Status", type: "display", description: "PHY currently has an active 1000BASE-T link." }, // Enhanced
+                    { bit: 11, name: "1000BASE-T Receive Error", type: "display", description: "Receive error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 10, name: "1000BASE-T Transmit Error", type: "display", description: "Transmit error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 9, name: "1000BASE-T SSD Error", type: "display", description: "Start-of-Stream Delimiter error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 8, name: "1000BASE-T ESD Error", type: "display", description: "End-of-Stream Delimiter error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 7, name: "1000BASE-T Carrier Extension Error", type: "display", description: "Carrier Extension error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 6, name: "Non-compliant BCM5400 Detected", type: "display", description: "Detected a non-compliant BCM5400 Link Partner." }, // Enhanced
+                    { bit: 5, name: "MDI Crossover Error", type: "display", description: "MDI crossover error detected during Auto-MDIX." }, // Enhanced
+                    { bits: [4, 3, 2, 1, 0], name: "Reserved [4:0]", type: "reserved", description: "Reserved." },
+                ]
+            },
+            "18": {
+                name: "Bypass Control",
+                address: "0x12",
+                access: "R/W",
+                description: "Controls bypassing of various internal PHY functions, primarily for testing.", // Enhanced
+                isReadOnly: false, // Contains R/W bits
+                defaultValue: "0088", // Matches Datasheet Table 35 (bit 7=1, bit 3=1)
+                fields: [
+                    { bit: 15, name: "Transmit Disable", type: "checkbox", description: "Disable the PHY's line transmitter." }, // Enhanced
+                    { bit: 14, name: "Bypass 4B5B Encoder/Decoder", type: "checkbox", description: "Bypass the 4B/5B encoder/decoder block." }, // Enhanced
+                    { bit: 13, name: "Bypass Scrambler", type: "checkbox", description: "Bypass the scrambler block." }, // Enhanced
+                    { bit: 12, name: "Bypass Descrambler", type: "checkbox", description: "Bypass the descrambler block." }, // Enhanced
+                    { bit: 11, name: "Bypass PCS Receive Path", type: "checkbox", description: "Bypass the PCS receive path." }, // Enhanced
+                    { bit: 10, name: "Bypass PCS Transmit Path", type: "checkbox", description: "Bypass the PCS transmit path." }, // Enhanced
+                    { bit: 9, name: "Bypass LFI Timer", type: "checkbox", description: "Bypass Link Fail Inhibit (LFI) timer." },
+                    { bit: 8, name: "Reserved", type: "reserved", description: "Reserved. Read as 0." }, // Enhanced
+                    { bit: 7, name: "Disable HP Auto-MDIX at Forced 10/100", type: "checkbox", description: "Disable HP Auto-MDIX function when speed is forced to 10/100 Mbps (Autoneg disabled). (Sticky)" }, // Enhanced
+                    { bit: 6, name: "Disable Non-compliant BCM5400 Detect", type: "checkbox", description: "Disable detection of non-compliant BCM5400 link partners. (Sticky)" }, // Enhanced
+                    { bit: 5, name: "Disable Pair Swap Correction", type: "checkbox", description: "Disable automatic pair swap correction (part of Auto-MDIX). (Sticky)" }, // Enhanced
+                    { bit: 4, name: "Disable Polarity Correction", type: "checkbox", description: "Disable automatic polarity inversion correction. (Sticky)" }, // Enhanced
+                    { bit: 3, name: "Parallel Detect Control", type: "select", description: "Controls handling of advertised ability during parallel detection. (Sticky)", options: {"0": "Ignore advertised ability (use link pulses)", "1": "Do not ignore advertised ability"} }, // Changed type, Enhanced
+                    { bit: 2, name: "Disable Pulse Shaping Filter", type: "checkbox", description: "Disable the pulse shaping filter." },
+                    { bit: 1, name: "Disable Auto 1000BASE-T Next Page Exchange", type: "checkbox", description: "Disable automatic 1000BASE-T Next Page exchanges during Auto-Negotiation. (Sticky)" }, // Enhanced
+                    { bit: 0, name: "Reserved", type: "reserved", description: "Reserved. Read as 0." }, // Enhanced
+                ]
+            },
+            "19": {
+                name: "Error Counter 1 (Receive Errors)",
+                address: "0x13",
+                access: "RO",
+                description: "Counts receive errors in 100/1000BASE-T modes. Saturates at 0xFF. Clears on read.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 36
+                fields: [
+                    { bits: [15, 8], name: "Reserved [15:8]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "100/1000 Receive Error Counter", type: "display", description: "Counts receive errors. Saturates at 0xFF. Self-clearing. (Note: In RMII mode, requires NRESET assertion to clear - see Datasheet Errata 8.2)" }, // Enhanced
+                ]
+            },
+            "20": {
+                name: "Error Counter 2 (False Carriers)",
+                address: "0x14",
+                access: "RO",
+                description: "Counts false carrier events in 100/1000BASE-T modes. Saturates at 0xFF. Clears on read.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 37
+                fields: [
+                    { bits: [15, 8], name: "Reserved [15:8]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "100/1000 False Carrier Counter", type: "display", description: "Counts false carrier events. Saturates at 0xFF. Self-clearing." }, // Enhanced
+                ]
+            },
+            "21": {
+                name: "Error Counter 3 (Link Disconnects)",
+                address: "0x15",
+                access: "RO",
+                description: "Counts link disconnect events on the copper media interface. Saturates at 0xFF. Clears on read.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 38
+                fields: [
+                    { bits: [15, 8], name: "Reserved [15:8]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bits: [7, 6, 5, 4, 3, 2, 1, 0], name: "Copper Media Link Disconnect Counter", type: "display", description: "Counts link disconnects on Cu media. Saturates at 0xFF. Self-clearing." }, // Enhanced
+                ]
+            },
+            "22": {
+                name: "Extended Control and Status",
+                address: "0x16",
+                access: "R/W", // Contains R/W bits
+                description: "Provides extended control for 10BASE-T operation (Link Test, Jabber, Echo, SQE) and sticky bit behavior.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "3600", // Matches Datasheet Table 39 (Disable Echo=1, Disable SQE=1, Sticky Reset Enable=1)
+                fields: [
+                    { bit: 15, name: "Force 10BASE-T Link High", type: "checkbox", description: "Force 10BASE-T link status to pass (bypass link integrity test). (Sticky)" }, // Enhanced
+                    { bit: 14, name: "Jabber Detect Disable", type: "checkbox", description: "Disable the Jabber detection function. (Sticky)" }, // Enhanced
+                    { bit: 13, name: "Disable 10BASE-T Echo", type: "checkbox", description: "Disable 10BASE-T echo function. (Sticky)" }, // Enhanced
+                    { bit: 12, name: "Disable SQE Mode", type: "checkbox", description: "Disable SQE (Signal Quality Error) test mode in 10BASE-T. (Sticky)" }, // Enhanced
+                    { bits: [11, 10], name: "10BASE-T Squelch Control", type: "select", description: "Adjusts 10BASE-T squelch threshold level. (Sticky)", options: { "0": "Normal", "1": "Low (Improves long loop BER)", "2": "High (Improves noisy env BER)", "3": "Reserved" } }, // Enhanced
+                    { bit: 9, name: "Sticky Reset Enable", type: "checkbox", description: "Sticky bits retain values during Software Reset (Reg 0.15). 0: Sticky bits revert to defaults. (Super-sticky)" }, // Enhanced
+                    { bit: 8, name: "EOF Error Detected", type: "display", description: "End-of-Frame error detected. (Self-Clearing)" }, // Enhanced
+                    { bit: 7, name: "10BASE-T Disconnect State", type: "display", description: "PHY has detected a 10BASE-T link disconnect. (Self-Clearing)" }, // Enhanced
+                    { bit: 6, name: "10BASE-T Link Status", type: "display", description: "PHY currently has an active 10BASE-T link." }, // Enhanced
+                    { bits: [5, 4, 3, 2, 1], name: "Reserved [5:1]", type: "reserved", description: "Reserved." },
+                    { bit: 0, name: "SMI Broadcast Write Enable", type: "checkbox", description: "Writes to this PHY are broadcast to all PHYs on the SMI bus. (Sticky)" }, // Enhanced
+                ]
+            },
+            "23": {
+                name: "Extended PHY Control 1",
+                address: "0x17",
+                access: "R/W", // Contains R/W bits
+                description: "Controls MAC interface selection (RGMII/RMII), MAC clock sync, and far-end loopback.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "1000", // Matches Datasheet Table 40 (MAC Interface = RGMII)
+                fields: [
+                    { bits: [15, 14], name: "Reserved", type: "reserved", description: "Reserved." },
+                    { bit: 13, name: "MAC Supplied Clock Enable", type: "checkbox", description: "Synchronize MAC RX_CLK output to REFCLK instead of recovered clock. (Not applicable for RMII). Takes effect after software reset." }, // Enhanced
+                    { bits: [12, 11], name: "MAC Interface Selection", type: "select", description: "Selects the MAC interface mode. Takes effect after software reset.", options: { "1": "RMII", "2": "RGMII" } }, // Enhanced
+                    { bits: [10, 9, 8, 7, 6, 5, 4], name: "Reserved [10:4]", type: "reserved", description: "Reserved." },
+                    { bit: 3, name: "Far-End Loopback Enable", type: "checkbox", description: "Enable far-end loopback (Media In -> MAC Interface -> Media Out)." }, // Enhanced
+                    { bits: [2, 1, 0], name: "Reserved [2:0]", type: "reserved", description: "Reserved." },
+                ]
+            },
+             "24": {
+                name: "Extended PHY Control 2",
+                address: "0x18",
+                access: "R/W", // Contains R/W bits
+                description: "Controls 100BASE-TX edge rate, jumbo packet support, and 1000BASE-T connector loopback.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0000", // Matches Datasheet Table 41
+                fields: [
+                    { bits: [15, 14, 13], name: "100BASE-TX Edge Rate Control", type: "select", description: "Selects the edge rate (slew rate) for 100BASE-TX transmitter. (Sticky)", options: { "4": "Fastest (100b)", "5": "+1 (101b)", "6": "+2 (110b)", "7": "+3 (111b)", "0": "+4 (000b)", "1": "+5 (001b)", "2": "+6 (010b)", "3": "+7 (Slowest) (011b)" } }, // Enhanced options map to DS binary
+                    { bit: 12, name: "PICMG 2.16 Reduced Power Mode", type: "checkbox", description: "Enable PICMG 2.16 backplane reduced power mode. (Sticky)" }, // Enhanced
+                    { bits: [11, 10, 9, 8, 7, 6], name: "Reserved [11:6]", type: "reserved", description: "Reserved." },
+                    { bits: [5, 4], name: "Jumbo Packet Mode", type: "select", description: "Selects maximum supported packet length. (Sticky)", options: { "0": "1.5kB (Normal)", "1": "9kB (<=100ppm clk) / 12kB (<=60ppm clk)", "2": "12kB (<=100ppm clk) / 16kB (<=70ppm clk)", "3": "Reserved" } }, // Enhanced options with notes
+                    { bits: [3, 2, 1], name: "Reserved [3:1]", type: "reserved", description: "Reserved." },
+                    { bit: 0, name: "1000BASE-T Connector Loopback Enable", type: "checkbox", description: "Enable 1000BASE-T external connector loopback mode (Requires external loopback connector/cable: A->B, C->D and Reg 18.5=1)." }, // Enhanced
+                ]
+            },
+             "25": {
+                name: "Interrupt Mask",
+                address: "0x19",
+                access: "R/W",
+                description: "Enables or disables (masks) specific interrupt sources from asserting the MDINT pin and setting Reg 26.15.", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0000", // Matches Datasheet Table 42
+                fields: [
+                    { bit: 15, name: "MDINT Pin Enable", type: "checkbox", description: "Allow MDINT pin to be asserted by unmasked interrupts (Reg 26.15). (Sticky)" }, // Enhanced
+                    { bit: 14, name: "Speed Change Interrupt Mask", type: "checkbox", description: "Enable Speed state change interrupt. (Sticky)" }, // Enhanced
+                    { bit: 13, name: "Link Change Interrupt Mask", type: "checkbox", description: "Enable Link state change interrupt. (Sticky)" }, // Enhanced
+                    { bit: 12, name: "Duplex Change Interrupt Mask", type: "checkbox", description: "Enable Full-Duplex state change interrupt. (Sticky)" }, // Enhanced
+                    { bit: 11, name: "Autoneg Error Interrupt Mask", type: "checkbox", description: "Enable Auto-Negotiation error interrupt. (Sticky)" }, // Enhanced
+                    { bit: 10, name: "Autoneg Complete Interrupt Mask", type: "checkbox", description: "Enable Auto-Negotiation complete interrupt. (Sticky)" }, // Enhanced
+                    { bit: 9, name: "PoE Detect Interrupt Mask", type: "checkbox", description: "Enable Inline-powered (PoE) device detection interrupt. (Sticky)" }, // Enhanced
+                    { bit: 8, name: "Symbol Error Interrupt Mask", type: "checkbox", description: "Enable Symbol error interrupt. (Sticky)" }, // Enhanced
+                    { bit: 7, name: "Fast Link Failure Interrupt Mask", type: "checkbox", description: "Enable Fast link failure detection interrupt. (Sticky)" }, // Enhanced
+                    { bit: 6, name: "Wake-on-LAN Interrupt Mask", type: "checkbox", description: "Enable Wake-on-LAN event interrupt. (Sticky)" }, // Enhanced
+                    { bit: 5, name: "Extended Interrupt Mask (Reg 28E2)", type: "checkbox", description: "Enable interrupts specified in Extended Interrupt Mask (Reg 28E2). (Sticky)" }, // Enhanced
+                    { bit: 4, name: "Reserved", type: "reserved", description: "Reserved." },
+                    { bit: 3, name: "False Carrier Interrupt Mask", type: "checkbox", description: "Enable False carrier detection interrupt. (Sticky)" }, // Enhanced
+                    { bit: 2, name: "Link Speed Downshift Interrupt Mask", type: "checkbox", description: "Enable Link speed downshift detection interrupt. (Sticky)" }, // Enhanced
+                    { bit: 1, name: "Master/Slave Resolution Error Interrupt Mask", type: "checkbox", description: "Enable Master/Slave resolution error interrupt. (Sticky)" }, // Enhanced
+                    { bit: 0, name: "RX_ER Interrupt Mask", type: "checkbox", description: "Enable RX_ER (Receive Error) indication interrupt. (Sticky)" }, // Enhanced
+                ]
+            },
+             "26": {
+                name: "Interrupt Status",
+                address: "0x1A",
+                access: "RO",
+                description: "Indicates which interrupt events have occurred. Bits are self-clearing on read.", // Enhanced
+                isReadOnly: true,
+                defaultValue: "0000", // Matches Datasheet Table 43
+                fields: [
+                    { bit: 15, name: "Interrupt Pending Status", type: "display", description: "An unmasked interrupt event has occurred. Check bits 14:0. (Self-Clearing)" }, // Enhanced
+                    { bit: 14, name: "Speed Change Status", type: "display", description: "Speed state change occurred. (Self-Clearing)" },
+                    { bit: 13, name: "Link Change Status", type: "display", description: "Link state change occurred. (Self-Clearing)" },
+                    { bit: 12, name: "FDX Change Status", type: "display", description: "Full-Duplex state change occurred. (Self-Clearing)" },
+                    { bit: 11, name: "Autoneg Error Status", type: "display", description: "Auto-Negotiation error occurred. (Self-Clearing)" },
+                    { bit: 10, name: "Autoneg Complete Status", type: "display", description: "Auto-Negotiation completed. (Self-Clearing)" },
+                    { bit: 9, name: "PoE Detect Status", type: "display", description: "Inline-powered (PoE) device detected. (Self-Clearing)" },
+                    { bit: 8, name: "Symbol Error Status", type: "display", description: "Symbol error occurred. (Self-Clearing)" },
+                    { bit: 7, name: "Fast Link Failure Status", type: "display", description: "Fast link failure detected. (Self-Clearing)" },
+                    { bit: 6, name: "Wake-on-LAN Status", type: "display", description: "Wake-on-LAN event occurred. (Self-Clearing)" },
+                    { bit: 5, name: "Extended Interrupt Status (Reg 29E2)", type: "display", description: "An extended interrupt (see Reg 29E2) occurred. (Self-Clearing)" }, // Enhanced
+                    { bit: 4, name: "Reserved", type: "reserved", description: "Reserved." },
+                    { bit: 3, name: "False Carrier Status", type: "display", description: "False carrier event occurred. (Self-Clearing)" },
+                    { bit: 2, name: "Link Speed Downshift Status", type: "display", description: "Link speed downshift occurred. (Self-Clearing)" },
+                    { bit: 1, name: "Master/Slave Resolution Error Status", type: "display", description: "Master/Slave resolution error occurred. (Self-Clearing)" },
+                    { bit: 0, name: "RX_ER Status", type: "display", description: "RX_ER (Receive Error) indication occurred. (Self-Clearing)" },
+                ]
+            },
+            // Register 27 is Reserved
+            "28": {
+                name: "Auxiliary Control and Status",
+                address: "0x1C",
+                access: "R/W", // Contains R/W bits for ActiPHY
+                description: "Provides auxiliary status (resolved Speed, Duplex, MDIX state, Polarity) and ActiPHY power saving controls.", // Enhanced
+                isReadOnly: false, // Has R/W bits
+                defaultValue: "0004", // Matches Datasheet Table 44 (ActiPHY time-out bit 2 = 1 -> 2.3s)
+                fields: [
+                    { bit: 15, name: "Autoneg Complete/Link Status", type: "display", description: "Reflects Autoneg Complete (1.5) if AN enabled, else reflects Link Status (1.2)." }, // Enhanced
+                    { bit: 14, name: "Autoneg Disabled Status", type: "display", description: "Reflects the inverted state of Autoneg Enable (0.12)." }, // Enhanced
+                    { bit: 13, name: "HP Auto-MDIX Crossover State", type: "display", description: "Crossover state (MDI-X) selected by Auto-MDIX. 0: Straight state (MDI)." }, // Enhanced
+                    { bit: 12, name: "CD Pair Swap Status", type: "display", description: "Pairs C and D are swapped internally." }, // Enhanced
+                    { bit: 11, name: "Pair A Polarity Inversion Status", type: "display", description: "Polarity inversion detected and corrected on Pair A." }, // Enhanced
+                    { bit: 10, name: "Pair B Polarity Inversion Status", type: "display", description: "Polarity inversion detected and corrected on Pair B." }, // Enhanced
+                    { bit: 9, name: "Pair C Polarity Inversion Status", type: "display", description: "Polarity inversion detected and corrected on Pair C." }, // Enhanced
+                    { bit: 8, name: "Pair D Polarity Inversion Status", type: "display", description: "Polarity inversion detected and corrected on Pair D." }, // Enhanced
+                    { bits: [7, 2], name: "ActiPHY Link Timeout Control", type: "select", description: "Sets timeout duration before entering low power state after link drop in ActiPHY mode. Bit 7 is MSB. (Sticky)", options: {"0": "2.3 seconds (00b)", "1": "3.3 seconds (01b)", "2": "4.3 seconds (10b)", "3": "5.3 seconds (11b)"} }, // Enhanced options
+                    { bit: 6, name: "ActiPHY Mode Enable", type: "checkbox", description: "Enable ActiPHY power saving mode. (Sticky)" }, // Enhanced
+                    { bit: 5, name: "Resolved Duplex Status", type: "display", description: "Resolved duplex mode (1=Full-duplex, 0=Half-duplex)." }, // Enhanced
+                    { bits: [4, 3], name: "Resolved Speed Status", type: "display", description: "Resolved speed (00=10 Mbps, 01=100 Mbps, 10=1000 Mbps)." }, // Enhanced
+                    // Bit 2 is LSB of ActiPHY timeout
+                    { bits: [1, 0], name: "Resolved Media Mode Status", type: "display", description: "Resolved media mode (01=Copper media)." }, // Enhanced
+                ]
+            },
+             "29": {
+                name: "LED Mode Select",
+                address: "0x1D",
+                access: "R/W",
+                description: "Selects the function/information displayed by each LED output pin (LED0, LED1). (Sticky)", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0054", // Matches Datasheet Table 45 (LED1=Mode 5, LED0=Mode 4)
+                fields: [
+                    { bits: [15, 8], name: "Reserved [15:8]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bits: [7, 6, 5, 4], name: "LED1 Mode Select", type: "select", description: "Select mode/function for LED1 output. (Sticky)", options: { "0": "Link/Activity", "1": "Link1000/Activity", "2": "Link100/Activity", "3": "Link10/Activity", "4": "Link100/1000/Activity", "5": "Link10/1000/Activity", "6": "Link10/100/Activity", "8": "Duplex/Collision", "9": "Collision", "10": "Activity", "12": "Autoneg Fault", "13": "Serial Mode Clock (LED1 becomes S_CLK)", "14": "Force Off", "15": "Force On" } }, // Enhanced options
+                    { bits: [3, 2, 1, 0], name: "LED0 Mode Select", type: "select", description: "Select mode/function for LED0 output. (Sticky)", options: { "0": "Link/Activity", "1": "Link1000/Activity", "2": "Link100/Activity", "3": "Link10/Activity", "4": "Link100/1000/Activity", "5": "Link10/1000/Activity", "6": "Link10/100/Activity", "8": "Duplex/Collision", "9": "Collision", "10": "Activity", "12": "Autoneg Fault", "13": "Serial Mode Data (LED0 becomes S_DATA)", "14": "Force Off", "15": "Force On" } }, // Enhanced options
+                ]
+            },
+             "30": {
+                name: "LED Behavior",
+                address: "0x1E",
+                access: "R/W",
+                description: "Controls LED behavior like blinking/pulse rate, pulse stretching, combine feature, and pulsing enable. (Sticky)", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0400", // Matches Datasheet Table 46 (Blink/Pulse rate = 5Hz/200ms)
+                fields: [
+                    { bits: [15, 13], name: "Reserved", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bit: 12, name: "LED Pulsing Enable", type: "checkbox", description: "Enable LED pulsing (5kHz, duty cycle set by Reg 25G) when active to save power. (Sticky)" }, // Enhanced
+                    { bits: [11, 10], name: "LED Blink/Pulse-Stretch Rate", type: "select", description: "Selects rate for blinking or duration for pulse-stretching. (Sticky)", options: { "0": "2.5Hz / 400ms", "1": "5Hz / 200ms", "2": "10Hz / 100ms", "3": "20Hz / 50ms" } }, // Enhanced
+                    { bits: [9, 7], name: "Reserved [9:7]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bit: 6, name: "LED1 Behavior Select", type: "select", description: "Select secondary indication behavior for LED1 (Collision or Activity). (Sticky)", options: {"0": "Blink", "1": "Pulse-stretch"} }, // Changed type, Enhanced
+                    { bit: 5, name: "LED0 Behavior Select", type: "select", description: "Select secondary indication behavior for LED0 (Collision or Activity). (Sticky)", options: {"0": "Blink", "1": "Pulse-stretch"} }, // Changed type, Enhanced
+                    { bits: [4, 2], name: "Reserved [4:2]", type: "reserved", description: "Reserved." }, // Adjusted bits
+                    { bit: 1, name: "LED1 Combine Disable", type: "checkbox", description: "Disable combine feature for LED1 (shows only primary status). 0: Enable (shows primary + secondary indication). (Sticky)" }, // Enhanced
+                    { bit: 0, name: "LED0 Combine Disable", type: "checkbox", description: "Disable combine feature for LED0 (shows only primary status). 0: Enable (shows primary + secondary indication). (Sticky)" }, // Enhanced
+                ]
+            },
+             "31": {
+                name: "Extended Page Access",
+                address: "0x1F",
+                access: "R/W",
+                description: "Selects the target register page for accesses to addresses 0x10-0x1E (or 0x00-0x1E for GPIO page).", // Enhanced
+                isReadOnly: false,
+                defaultValue: "0000", // Matches Datasheet Table 47
+                fields: [
+                    { bits: [15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0], name: "Page Select", type: "select", description: "Selects the active register page.", options: { "0": "0x0000: Main Registers", "1": "0x0001: Extended Page 1", "2": "0x0002: Extended Page 2", "16": "0x0010: GPIO Page" } }, // Enhanced options
+                ]
+            },
+        };
+</script>
+<script>
+        // --- Initialization ---
+        function initializeRegister(registerId) {
+            const registerData = registers[registerId];
+            const container = document.getElementById(`register-${registerId}`);
+            const hexInput = container.querySelector('.hex-input');
+            const tableBody = container.querySelector('tbody');
+            tableBody.innerHTML = ''; // Clear previous content if any
+
+            // Sort fields by the highest bit number involved (descending)
+            const sortedFields = [...registerData.fields].sort((a, b) => {
+                const bitA = a.bit !== undefined ? a.bit : (a.bits ? Math.max(...a.bits) : -1);
+                const bitB = b.bit !== undefined ? b.bit : (b.bits ? Math.max(...b.bits) : -1);
+                return bitB - bitA;
+            });
+
+
+             let processedBits = new Set(); // Keep track of bits already part of a multi-bit field
+
+             sortedFields.forEach(field => {
+                 const isMultiBit = Array.isArray(field.bits);
+                 let bitDisplay = '';
+                 let bitIdentifier = '';
+
+                 if (isMultiBit) {
+                     // Sort bits within the multi-bit field numerically descending for display/ID
+                     const sortedMultiBits = [...field.bits].sort((x, y) => y - x);
+                     bitIdentifier = sortedMultiBits.join(','); // Use sorted bits for unique ID
+                     // Display range like [MSB:LSB]
+                     bitDisplay = `[${sortedMultiBits[0]}:${sortedMultiBits[sortedMultiBits.length - 1]}]`;
+
+                     // Check if any bit in this multi-bit field has already been processed
+                     if (sortedMultiBits.some(b => processedBits.has(b))) {
+                        console.warn(`Skipping multi-bit field ${bitIdentifier} as part of it was already processed.`);
+                        return;
+                     }
+                     // Mark all bits in this field as processed
+                     sortedMultiBits.forEach(b => processedBits.add(b));
+                 } else { // Single bit field
+                     bitIdentifier = field.bit.toString();
+                     bitDisplay = field.bit.toString();
+                     // Check if this single bit was already part of a processed multi-bit field
+                     if (processedBits.has(field.bit)) {
+                         console.warn(`Skipping single bit field ${bitIdentifier} as it was part of a multi-bit field.`);
+                         return;
+                     }
+                     processedBits.add(field.bit); // Mark this single bit as processed
+                 }
+
+
+                 const row = tableBody.insertRow();
+                 row.insertCell().textContent = bitDisplay;
+                 row.insertCell().textContent = field.name;
+                 row.insertCell().textContent = field.description;
+                 const controlCell = row.insertCell();
+                 controlCell.classList.add('text-center', 'align-middle'); // Center align control cell
+
+                 let controlElement;
+
+                 if (field.type === 'checkbox') {
+                     controlElement = document.createElement('input');
+                     controlElement.type = 'checkbox';
+                     controlElement.classList.add('form-checkbox', 'h-5', 'w-5', 'text-indigo-600', 'rounded', 'focus:ring-indigo-500');
+                     if (registerData.isReadOnly) {
+                         controlElement.disabled = true;
+                         controlElement.classList.add('read-only-control');
+                     }
+                 } else if (field.type === 'select') {
+                     controlElement = document.createElement('select');
+                     controlElement.classList.add('form-select', 'block', 'w-full', 'py-1', 'px-2', 'text-sm', 'rounded-md', 'border-gray-300', 'shadow-sm', 'focus:border-indigo-300', 'focus:ring', 'focus:ring-indigo-200', 'focus:ring-opacity-50');
+                      if (registerData.isReadOnly) {
+                         controlElement.disabled = true;
+                         controlElement.classList.add('read-only-control');
+                     }
+                     for (const [value, text] of Object.entries(field.options)) {
+                         const option = document.createElement('option');
+                         option.value = value;
+                         option.textContent = text;
+                         controlElement.appendChild(option);
+                     }
+                 } else if (field.type === 'display') {
+                     controlElement = document.createElement('span');
+                     controlElement.classList.add('read-only-control-display');
+                     // Default display value set during updateFromHex
+                     if (field.bits) { // Multi-bit reserved display
+                         controlElement.textContent = `0x${'0'.padStart(Math.ceil(field.bits.length / 4), '0')}`;
+                     } else {
+                         controlElement.textContent = 'False';
+                     }
+                 } else if (field.type === 'reserved') {
+                    controlElement = document.createElement('span');
+                    controlElement.classList.add('read-only-control-display');
+                    controlElement.textContent = ''; // Initially empty
+                }
+                 // Add other control types here ('number', etc.)
+
+                 if (controlElement) {
+                     controlElement.dataset.bit = bitIdentifier; // Use consistent identifier
+                     controlCell.appendChild(controlElement);
+                     // Add change listener only to interactive controls in non-readonly registers
+                     if (!registerData.isReadOnly && (field.type === 'checkbox' || field.type === 'select' || field.type === 'reserved')) {
+                         controlElement.addEventListener('change', () => updateFromBits(registerId, registers));
+                     }
+                 }
+             });
+
+
+            // Set initial hex value and update others
+            hexInput.value = registerData.defaultValue || '0000';
+            updateFromHex(registerId, registers); // Populate binary and controls based on default hex
+
+            // Add event listener for hex input
+            hexInput.addEventListener('input', () => updateFromHex(registerId, registers));
+            // Add listener to clear controls if hex input becomes empty
+            hexInput.addEventListener('input', (e) => {
+                if (e.target.value === '') {
+                    clearBitControls(registerId, registers);
+                    const binaryDisplay = container.querySelector('.binary-display');
+                    binaryDisplay.textContent = '0000 0000 0000 0000'; // Reset binary display too
+                }
+            });
+        }
+
+        function createRegisterHTML(registerId, registerData) {
+            const readOnlyText = registerData.isReadOnly ? " - Read Only" : "";
+            return `
+                <div id="register-${registerId}" class="register-calculator bg-white p-6 rounded-lg shadow-md mb-8">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-1">Register ${registerId}: ${registerData.name} (${registerData.address})${readOnlyText}</h2>
+                    <p class="text-sm text-gray-600 mb-4">${registerData.description}</p>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label for="hex-input-${registerId}" class="block text-sm font-medium text-gray-700 mb-1">Hex Value (16-bit):</label>
+                            <div class="relative flex items-center">
+                                <span class="absolute left-2 text-gray-500 select-none">0x</span>
+                                <input type="text"
+                                    id="hex-input-${registerId}"
+                                    maxlength="4"
+                                    class="hex-input w-full p-2 pl-7 border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                                    placeholder="0000">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Binary Value:</label>
+                            <div id="binary-display-${registerId}" class="binary-display w-full p-2 border border-gray-300 rounded-md bg-gray-50 text-gray-500 min-h-[42px] flex items-center">0000 0000 0000 0000</div>
+                        </div>
+                    </div>
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">Bit Fields:</h3>
+                    <div class="overflow-x-auto">
+                        <table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-md">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bit(s)</th>
+                                    <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                    <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                                    <th scope="col" class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Value / Control</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200 text-sm">
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Initialize all defined registers on page load
+        // Initialize the page with register sections
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.getElementById('registers-container');
+            
+            // Create HTML for each register
+            Object.entries(registers).forEach(([registerId, registerData]) => {
+                container.insertAdjacentHTML('beforeend', createRegisterHTML(registerId, registerData));
+            });
+
+            // Initialize each register's functionality
+            Object.keys(registers).forEach(initializeRegister);
+        });
+    </script>
+    <script src="./chip_register_helpers.js"></script>
+</body>
+</html>
